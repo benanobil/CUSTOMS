@@ -91,6 +91,7 @@ export default function Signup1() {
         lastName,
         email,
         phoneNumber: `+233 ${phone}`,
+        password,
       },
     });
   };
@@ -316,9 +317,25 @@ export default function Signup1() {
           {/* ─── Continue Button ─── */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={styles.continueButton}
+              style={[
+                styles.continueButton,
+                (!firstName ||
+                  !lastName ||
+                  !email ||
+                  !isPhoneValid ||
+                  !isPasswordValid ||
+                  !passwordsMatch) && { opacity: 0.5 },
+              ]}
               onPress={handleContinue}
               activeOpacity={0.8}
+              disabled={
+                !firstName ||
+                !lastName ||
+                !email ||
+                !isPhoneValid ||
+                !isPasswordValid ||
+                !passwordsMatch
+              }
             >
               <LinearGradient
                 colors={[

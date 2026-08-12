@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,12 @@ import {
   StatusBar,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  TextInput,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,6 +25,8 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { AuthContext } from "../../../utils/authContext";
 import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
+import { profileService } from "../../../services/profileService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -164,8 +172,125 @@ const InfoRow = ({ label, value, isLast }) => (
 // ══════════════════════════════════════════════════
 
 export default function Profile() {
-  const { user, logOut } = useContext(AuthContext);
+  const { user, updateUser, logOut } = useContext(AuthContext);
   const router = useRouter();
+  const [profile, setProfile] = useState(user);
+  const [stats, setStats] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isEditVisible, setIsEditVisible] = useState(false);
+  const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
+    phoneNumber: "",
+    supervisorEmail: "",
+  });
+
+  const loadProfile = useCallback(async ({ refreshing = false } = {}) => {
+    refreshing ? setIsRefreshing(true) : setIsLoading(true);
+    try {
+      const response = await profileService.getProfile();
+      setProfile(response.user);
+      setStats(response.stats || {});
+      updateUser(response.user);
+    } catch (error) {
+      Alert.alert("Profile unavailable", error.message || "Unable to load your profile.");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [updateUser]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const openEditProfile = () => {
+    setForm({
+      firstName: profile?.firstName || "",
+      lastName: profile?.lastName || "",
+      phoneNumber: profile?.phoneNumber || "",
+      supervisorEmail: profile?.supervisorEmail || "",
+    });
+    setIsEditVisible(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!form.firstName.trim() || !form.lastName.trim() || form.phoneNumber.trim().length < 10) {
+      Alert.alert("Invalid profile", "Enter your name and a valid phone number.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const response = await profileService.updateProfile({
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phoneNumber: form.phoneNumber.trim(),
+        supervisorEmail: form.supervisorEmail.trim() || undefined,
+      });
+      setProfile(response.user);
+      updateUser(response.user);
+      setIsEditVisible(false);
+      Alert.alert("Profile updated", response.message || "Your profile was updated.");
+    } catch (error) {
+      Alert.alert("Update failed", error.message || "Unable to update your profile.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleProfileImage = async () => {
+    if (profile?.profileImageUrl) {
+      Alert.alert("Profile photo", "Choose an action", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: handleRemoveImage },
+        { text: "Change", onPress: pickAndUploadImage },
+      ]);
+      return;
+    }
+    await pickAndUploadImage();
+  };
+
+  const pickAndUploadImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission required", "Allow photo access to select a profile image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    setIsUploading(true);
+    try {
+      const response = await profileService.uploadImage(result.assets[0]);
+      const updates = { profileImageUrl: response.profileImageUrl };
+      setProfile((current) => ({ ...current, ...updates }));
+      updateUser(updates);
+    } catch (error) {
+      Alert.alert("Upload failed", error.message || "Unable to upload the image.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    setIsUploading(true);
+    try {
+      await profileService.removeImage();
+      setProfile((current) => ({ ...current, profileImageUrl: null }));
+      updateUser({ profileImageUrl: null });
+    } catch (error) {
+      Alert.alert("Removal failed", error.message || "Unable to remove the image.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -182,27 +307,39 @@ export default function Profile() {
     );
   }
 
-  const userName = user?.name || "Adu Anokye Joel";
-  const userRole = user?.orgInfo || "Customs Officer";
+  if (isLoading && !profile) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#F5B81B" />
+      </View>
+    );
+  }
+
+  const userName = profile?.fullName || "Customs Officer";
+  const userRole = [profile?.rankDesignation, profile?.portOfAssignment]
+    .filter(Boolean)
+    .join(" • ") || "Customs Officer";
 
   // Account info (customs officer)
   const accountInfo = [
-    { label: "Email", value: user?.email || "john.mensah@gra.gov.gh" },
-    { label: "Wallet Address", value: user?.wallet || "0xCustomsWallet456" },
-    { label: "Employee ID", value: user?.employeeId || "GRA-2024-5678" },
-    { label: "Badge Number", value: user?.badge || "CUS-2024-001" },
-    { label: "Phone", value: user?.phoneNumber || "+233 20 987 6543" },
-    { label: "Port", value: user?.port || "Tema Port" },
-    { label: "Department", value: user?.department || "Customs Division" },
-    { label: "Rank", value: user?.rank || "Senior Officer" },
+    { label: "Email", value: profile?.email || "—" },
+    { label: "Wallet Address", value: profile?.walletAddress || "—" },
+    { label: "Employee ID", value: profile?.employeeId || "—" },
+    { label: "Badge Number", value: profile?.badgeNumber || "—" },
+    { label: "Phone", value: profile?.phoneNumber || "—" },
+    { label: "Supervisor", value: profile?.supervisorEmail || "—" },
+    { label: "Port", value: profile?.portOfAssignment || "—" },
+    { label: "Department", value: profile?.department || "—" },
+    { label: "Rank", value: profile?.rankDesignation || "—" },
   ];
 
   // Today's activity stats
   const todaysActivity = [
-    { label: "Declaration Processed", value: "45" },
-    { label: "Goods Released", value: "12" },
-    { label: "Payments Verified", value: "8" },
-    { label: "Cases Flagged", value: "2" },
+    { label: "Declarations Processed", value: String(stats.totalProcessed ?? 0) },
+    { label: "Goods Released", value: String(stats.released ?? 0) },
+    { label: "Pending Release", value: String(stats.pendingRelease ?? 0) },
+    { label: "Cases Flagged", value: String(stats.flagged ?? 0) },
+    { label: "Revenue Collected", value: `$${Number(stats.revenueCollected || 0).toLocaleString()}` },
   ];
 
   return (
@@ -242,31 +379,46 @@ export default function Profile() {
           style={styles.content}
           contentContainerStyle={styles.contentInner}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => loadProfile({ refreshing: true })}
+              tintColor="#F5B81B"
+            />
+          }
         >
           {/* Profile picture + name section */}
           <View style={styles.profileSection}>
-            <View style={styles.avatarWrapper}>
+            <TouchableOpacity
+              style={styles.avatarWrapper}
+              onPress={handleProfileImage}
+              disabled={isUploading}
+              activeOpacity={0.8}
+            >
               <View style={styles.avatar}>
-                <Svg width="80" height="80" viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z"
-                    fill="#FFFFFF"
-                  />
-                  <Path
-                    d="M4 22C4 17.5817 7.58172 14 12 14C16.4183 14 20 17.5817 20 22"
-                    fill="#FFFFFF"
-                  />
-                </Svg>
+                {profile?.profileImageUrl ? (
+                  <Image source={{ uri: profile.profileImageUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+                    <Path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" fill="#FFFFFF" />
+                    <Path d="M4 22C4 17.5817 7.58172 14 12 14C16.4183 14 20 17.5817 20 22" fill="#FFFFFF" />
+                  </Svg>
+                )}
+                {isUploading && <ActivityIndicator style={styles.avatarLoader} color="#F5B81B" />}
               </View>
               <View style={styles.cameraBadge}>
                 <CameraIcon />
               </View>
-            </View>
+            </TouchableOpacity>
 
             <Text style={styles.userName}>{userName}</Text>
             <Text style={styles.userRole}>{userRole}</Text>
 
-            <TouchableOpacity style={styles.editProfileButton} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.editProfileButton}
+              activeOpacity={0.8}
+              onPress={openEditProfile}
+            >
               <Text style={styles.editProfileText}>Edit Profile</Text>
             </TouchableOpacity>
           </View>
@@ -336,6 +488,56 @@ export default function Profile() {
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
+
+      <Modal
+        visible={isEditVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsEditVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.editModal}>
+            <Text style={styles.editModalTitle}>Edit Profile</Text>
+            {[
+              ["First name", "firstName"],
+              ["Last name", "lastName"],
+              ["Phone number", "phoneNumber"],
+              ["Supervisor email", "supervisorEmail"],
+            ].map(([label, key]) => (
+              <View key={key} style={styles.editField}>
+                <Text style={styles.editFieldLabel}>{label}</Text>
+                <TextInput
+                  style={styles.editInput}
+                  value={form[key]}
+                  onChangeText={(value) => setForm((current) => ({ ...current, [key]: value }))}
+                  autoCapitalize={key === "supervisorEmail" ? "none" : "words"}
+                  keyboardType={key === "phoneNumber" ? "phone-pad" : key === "supervisorEmail" ? "email-address" : "default"}
+                />
+              </View>
+            ))}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setIsEditVisible(false)}
+                disabled={isSaving}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveProfile}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color="#000000" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -412,6 +614,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+  avatarLoader: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.65)",
   },
   cameraBadge: {
     position: "absolute",
@@ -567,4 +777,59 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  editModal: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 32,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    gap: 14,
+  },
+  editModalTitle: {
+    color: "#171725",
+    fontFamily: "PlusJakartaSans_700Bold",
+    fontSize: 18,
+  },
+  editField: { gap: 6 },
+  editFieldLabel: {
+    color: "#78828A",
+    fontFamily: "PlusJakartaSans_500Medium",
+    fontSize: 12,
+  },
+  editInput: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: "#D9DEE3",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    color: "#171725",
+    fontFamily: "PlusJakartaSans_500Medium",
+    fontSize: 14,
+  },
+  modalActions: { flexDirection: "row", gap: 12, marginTop: 6 },
+  cancelButton: {
+    flex: 1,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#D9DEE3",
+    borderRadius: 8,
+  },
+  cancelButtonText: { color: "#171725", fontFamily: "PlusJakartaSans_600SemiBold" },
+  saveButton: {
+    flex: 1,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F5B81B",
+    borderRadius: 8,
+  },
+  saveButtonText: { color: "#000000", fontFamily: "PlusJakartaSans_600SemiBold" },
 });

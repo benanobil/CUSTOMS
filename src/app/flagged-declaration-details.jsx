@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import {
   View,
@@ -9,11 +9,17 @@ import {
   ScrollView,
   TextInput,
   Modal,
+  Alert,
+  ActivityIndicator,
+  Linking,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path } from "react-native-svg";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { AuthContext } from "../utils/authContext";
+import { evidenceService } from "../services/evidenceService";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -211,10 +217,12 @@ const DOCUMENT_TYPES = [
   "Bill of Lading",
   "Packing List",
   "Certificate of Origin",
-  "Import License",
+  "Supplier Price List",
+  "Manufacturer Certificate",
+  "Bank Transfer",
   "Market Price Report",
-  "Correspondence",
-  "Other Supporting Document",
+  "Evidence Photo",
+  "Other",
 ];
 
 const DESCRIPTION_SUGGESTIONS = [
@@ -237,11 +245,12 @@ const UploadDocumentModal = ({
   files,
   onPickFile,
   onRemoveFile,
+  isUploading,
 }) => {
   const [showDocTypeDropdown, setShowDocTypeDropdown] = useState(false);
   const [showDescDropdown, setShowDescDropdown] = useState(false);
 
-  const isSubmitDisabled = !documentType || files.length === 0;
+  const isSubmitDisabled = !documentType || files.length === 0 || isUploading;
 
   return (
     <Modal
@@ -455,8 +464,14 @@ const UploadDocumentModal = ({
               activeOpacity={0.85}
               disabled={isSubmitDisabled}
             >
-              <CloudUploadWhiteIcon />
-              <Text style={modalStyles.submitBtnText}>Upload</Text>
+              {isUploading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <CloudUploadWhiteIcon />
+                  <Text style={modalStyles.submitBtnText}>Upload</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -502,12 +517,17 @@ const TimelineEvent = ({ dotColor, text }) => (
   </View>
 );
 
-const EvidenceRow = ({ name, onView, isLast }) => (
+const EvidenceRow = ({ name, onView, onDelete, isLast }) => (
   <View style={[styles.evidenceRow, !isLast && styles.evidenceRowBorder]}>
     <Text style={styles.evidenceName}>{name}</Text>
     <TouchableOpacity onPress={onView} style={styles.viewBtn} activeOpacity={0.7}>
       <EyeIcon />
     </TouchableOpacity>
+    {onDelete && (
+      <TouchableOpacity onPress={onDelete} style={styles.viewBtn} activeOpacity={0.7}>
+        <Ionicons name="trash-outline" size={17} color="#FF3D00" />
+      </TouchableOpacity>
+    )}
   </View>
 );
 
@@ -527,12 +547,17 @@ const NextStepItem = ({ number, text }) => (
 export default function FlaggedDeclarationDetails() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { user } = useContext(AuthContext);
 
   // ─── Upload Modal state ─────────────────────────
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [documentType, setDocumentType] = useState("");
   const [description, setDescription] = useState("");
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
+  const [isLoadingEvidence, setIsLoadingEvidence] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -540,14 +565,6 @@ export default function FlaggedDeclarationDetails() {
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
   });
-
-  if (!fontsLoaded) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
 
   const declaration = {
     id: params.id || "TMA-2026-0042",
@@ -573,12 +590,6 @@ export default function FlaggedDeclarationDetails() {
     { dotColor: "#D1D5DB", text: "○  2026-07-10   Expected resolution date" },
   ];
 
-  const evidenceFiles = [
-    "Commercial Invoice (invoice_456.pdf)",
-    "Bill of Lading (BL_789.pdf)",
-    "Packing List (PL_123.pdf)",
-  ];
-
   const nextSteps = [
     "Provide any requested documents to the auditor",
     "Respond to auditor inquiries promptly",
@@ -587,8 +598,49 @@ export default function FlaggedDeclarationDetails() {
   ];
 
   // ─── Handlers ────────────────────────────────────
-  const handleViewEvidence = (fileName) => {
-    console.log("View evidence:", fileName);
+  const loadEvidence = useCallback(async ({ refreshing = false } = {}) => {
+    refreshing ? setIsRefreshing(true) : setIsLoadingEvidence(true);
+    try {
+      const response = await evidenceService.getByDeclaration(declaration.id);
+      setEvidenceFiles(response.files || []);
+    } catch (error) {
+      Alert.alert("Evidence unavailable", error.message || "Unable to load evidence.");
+    } finally {
+      setIsLoadingEvidence(false);
+      setIsRefreshing(false);
+    }
+  }, [declaration.id]);
+
+  useEffect(() => {
+    loadEvidence();
+  }, [loadEvidence]);
+
+  const handleViewEvidence = async (file) => {
+    try {
+      const supported = await Linking.canOpenURL(file.url);
+      if (!supported) throw new Error("This file cannot be opened on this device");
+      await Linking.openURL(file.url);
+    } catch (error) {
+      Alert.alert("Unable to open file", error.message);
+    }
+  };
+
+  const handleDeleteEvidence = (file) => {
+    Alert.alert("Delete evidence", `Delete ${file.originalName}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await evidenceService.delete(file.id);
+            setEvidenceFiles((current) => current.filter((item) => item.id !== file.id));
+          } catch (error) {
+            Alert.alert("Delete failed", error.message || "Unable to delete this file.");
+          }
+        },
+      },
+    ]);
   };
 
   const handleContactAuditor = () => {
@@ -599,12 +651,29 @@ export default function FlaggedDeclarationDetails() {
     setUploadModalVisible(true);
   };
 
-  const handleSubmitUpload = () => {
-    console.log("Submit upload:", { documentType, description, uploadedFiles });
-    setUploadModalVisible(false);
-    setDocumentType("");
-    setDescription("");
-    setUploadedFiles([]);
+  const handleSubmitUpload = async () => {
+    if (!documentType || uploadedFiles.length === 0 || isUploading) return;
+    setIsUploading(true);
+    try {
+      for (const file of uploadedFiles) {
+        await evidenceService.upload({
+          declarationId: declaration.id,
+          documentType,
+          description: description.trim() || undefined,
+          file,
+        });
+      }
+      setUploadModalVisible(false);
+      setDocumentType("");
+      setDescription("");
+      setUploadedFiles([]);
+      await loadEvidence();
+      Alert.alert("Upload complete", "The evidence was uploaded successfully.");
+    } catch (error) {
+      Alert.alert("Upload failed", error.message || "Unable to upload the evidence.");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
  const handlePickFile = async () => {
@@ -629,10 +698,9 @@ export default function FlaggedDeclarationDetails() {
 
     const file = result.assets[0];
 
-    // Optional: enforce 10 MB max size
-    const maxBytes = 10 * 1024 * 1024;
+    const maxBytes = 5 * 1024 * 1024;
     if (file.size && file.size > maxBytes) {
-      alert("File is too large. Maximum size is 10 MB.");
+      Alert.alert("File too large", "Maximum file size is 5 MB.");
       return;
     }
 
@@ -656,12 +724,20 @@ export default function FlaggedDeclarationDetails() {
     ]);
   } catch (err) {
     console.error("Error picking file:", err);
-    alert("Something went wrong. Please try again.");
+    Alert.alert("File selection failed", "Something went wrong. Please try again.");
   }
 };
   const handleRemoveUploadedFile = (index) => {
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -681,6 +757,13 @@ export default function FlaggedDeclarationDetails() {
           style={styles.content}
           contentContainerStyle={styles.contentInner}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => loadEvidence({ refreshing: true })}
+              tintColor="#F5B81B"
+            />
+          }
         >
           {/* ID + Status Pill */}
           <View style={styles.idRow}>
@@ -739,14 +822,21 @@ export default function FlaggedDeclarationDetails() {
 
           {/* Evidence & Documents */}
           <SectionCard Icon={EvidenceIcon} title="Evidence & Documents">
-            {evidenceFiles.map((file, idx) => (
-              <EvidenceRow
-                key={idx}
-                name={file}
-                onView={() => handleViewEvidence(file)}
-                isLast={idx === evidenceFiles.length - 1}
-              />
-            ))}
+            {isLoadingEvidence ? (
+              <ActivityIndicator color="#F5B81B" style={styles.evidenceLoader} />
+            ) : evidenceFiles.length === 0 ? (
+              <Text style={styles.emptyEvidenceText}>No evidence uploaded</Text>
+            ) : (
+              evidenceFiles.map((file, idx) => (
+                <EvidenceRow
+                  key={file.id}
+                  name={`${file.documentType} (${file.originalName})`}
+                  onView={() => handleViewEvidence(file)}
+                  onDelete={file.uploadedById === user?.id ? () => handleDeleteEvidence(file) : undefined}
+                  isLast={idx === evidenceFiles.length - 1}
+                />
+              ))
+            )}
           </SectionCard>
 
           {/* What You Need To Do */}
@@ -798,6 +888,7 @@ export default function FlaggedDeclarationDetails() {
         files={uploadedFiles}
         onPickFile={handlePickFile}
         onRemoveFile={handleRemoveUploadedFile}
+        isUploading={isUploading}
       />
     </View>
   );
@@ -987,6 +1078,13 @@ const styles = StyleSheet.create({
     fontFamily: "PlusJakartaSans_500Medium",
     fontSize: 12,
     flex: 1,
+  },
+  evidenceLoader: { marginVertical: 14 },
+  emptyEvidenceText: {
+    color: "#78828A",
+    fontFamily: "PlusJakartaSans_400Regular",
+    fontSize: 12,
+    paddingVertical: 12,
   },
   viewBtn: { padding: 4 },
 

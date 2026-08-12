@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -61,6 +63,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_800ExtraBold,
@@ -78,10 +81,19 @@ export default function Login() {
     );
   }
 
-  const handleLogin = () => {
-    // TODO: verify email/password with backend
-    // For now, log in with default user
-    logIn();
+  const handleLogin = async () => {
+    if (!isEmailValid || !password) {
+      Alert.alert("Missing details", "Enter a valid email address and password.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await logIn({ email: email.trim().toLowerCase(), password });
+    } catch (error) {
+      Alert.alert("Login failed", error.message || "Unable to log in.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCreateAccount = () => {
@@ -186,12 +198,17 @@ export default function Login() {
                   style={styles.loginButton}
                   onPress={handleLogin}
                   activeOpacity={0.8}
+                  disabled={isSubmitting}
                 >
                   <LinearGradient
                     colors={["rgba(255, 255, 255, 0.12)", "rgba(255, 255, 255, 0)"]}
                     style={StyleSheet.absoluteFill}
                   />
-                  <Text style={styles.loginButtonText}>Log In</Text>
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.loginButtonText}>Log In</Text>
+                  )}
                 </TouchableOpacity>
 
                 {/* Divider */}

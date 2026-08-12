@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
@@ -21,6 +23,7 @@ import {
 import { Inter_700Bold } from "@expo-google-fonts/inter";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { AuthContext } from "../utils/authContext";
+import { authService } from "../services/authService";
 
 // ══════════════════════════════════════════════════
 // 🎖 SVG Scalloped Badge with Checkmark
@@ -81,17 +84,17 @@ const SuccessBadge = () => (
 export default function OtpVerification() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { logIn } = useContext(AuthContext);
+  const { completeAuthentication } = useContext(AuthContext);
 
   // ─── Data forwarded from signup1 → signup2 ─────
   const phoneNumber = params.phoneNumber || "+233 507 758 901";
-  const role = params.role || "customs";
-  const name = params.name || "Joel";
-  const orgInfo = params.orgInfo || "";
+  const email = String(params.email || "");
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [timer, setTimer] = useState(24);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authResponse, setAuthResponse] = useState(null);
   const inputRefs = useRef([]);
 
   const [fontsLoaded] = useFonts({
@@ -136,27 +139,44 @@ export default function OtpVerification() {
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (timer === 0) {
-      setTimer(24);
-      setOtp(["", "", "", "", "", ""]);
-      inputRefs.current[0]?.focus();
+      try {
+        const response = await authService.resendOtp({ email });
+        setTimer(24);
+        setOtp(["", "", "", "", "", ""]);
+        inputRefs.current[0]?.focus();
+        Alert.alert("Code sent", response.message || "A new OTP was sent.");
+      } catch (error) {
+        Alert.alert("Resend failed", error.message || "Unable to resend the OTP.");
+      }
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     const otpCode = otp.join("");
-    if (otpCode.length === 6) {
-      setShowSuccess(true);
+    if (otpCode.length === 6 && !isSubmitting) {
+      setIsSubmitting(true);
+      try {
+        const response = await authService.verifyRegistration({ email, otp: otpCode });
+        setAuthResponse(response);
+        setShowSuccess(true);
+      } catch (error) {
+        Alert.alert("Verification failed", error.message || "The OTP could not be verified.");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
   // ─── Complete signup → log user in → go to home ─
-  const handleContinue = () => {
+  const handleContinue = async () => {
     setShowSuccess(false);
-    setTimeout(() => {
-      logIn({ role, name, orgInfo, phoneNumber });
-    }, 100);
+    try {
+      await completeAuthentication(authResponse);
+    } catch (error) {
+      Alert.alert("Sign in failed", error.message || "Unable to start your session.");
+    }
   };
 
   const isComplete = otp.join("").length === 6;
@@ -218,9 +238,13 @@ export default function OtpVerification() {
               style={[styles.nextButton, !isComplete && styles.nextButtonDisabled]}
               onPress={handleNext}
               activeOpacity={0.8}
-              disabled={!isComplete}
+              disabled={!isComplete || isSubmitting}
             >
-              <Text style={styles.nextButtonText}>Next</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.nextButtonText}>Next</Text>
+              )}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

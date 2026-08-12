@@ -12,11 +12,14 @@ import {
   Image,
   Modal,
   FlatList,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { authService } from "../services/authService";
 import {
   useFonts,
   PlusJakartaSans_800ExtraBold,
@@ -146,16 +149,18 @@ export default function Signup2() {
     lastName = "",
     email = "",
     phoneNumber = "",
+    password = "",
   } = useLocalSearchParams();
 
   const [employeeId, setEmployeeId] = useState("GRA-2024-5678");
   const [badgeNumber, setBadgeNumber] = useState("");
-  const [walletAddress, setWalletAddress] = useState("0xImporterWallet123");
+  const [walletAddress, setWalletAddress] = useState("");
   const [supervisorEmail, setSupervisorEmail] = useState("supervisor@gra.gov.gh");
   const [port, setPort] = useState("Tema Port");
   const [department, setDepartment] = useState("");
   const [rank, setRank] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_800ExtraBold,
@@ -175,15 +180,41 @@ export default function Signup2() {
   }
 
   // ─── Forward all data to OTP screen ─────────────
-  const handleRegister = () => {
-    if (!agreedToTerms) return;
+  const handleRegister = async () => {
+    if (!agreedToTerms || isSubmitting) return;
+    if (!employeeId || !badgeNumber || !walletAddress || !port || !department || !rank) {
+      Alert.alert("Missing details", "Complete all required customs officer fields.");
+      return;
+    }
+    setIsSubmitting(true);
+    let response;
+    try {
+      response = await authService.registerCustoms({
+        firstName,
+        lastName,
+        email: String(email).trim().toLowerCase(),
+        phoneNumber,
+        password,
+        walletAddress: walletAddress.trim(),
+        role: "CUSTOMS",
+        employeeId: employeeId.trim(),
+        badgeNumber: badgeNumber.trim(),
+        supervisorEmail: supervisorEmail.trim() || undefined,
+        portOfAssignment: port,
+        department,
+        rankDesignation: rank,
+      });
+    } catch (error) {
+      Alert.alert("Registration failed", error.message || "Unable to register.");
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
     router.push({
       pathname: "/otpverification",
       params: {
+        email: response.email || email,
         phoneNumber,
-        name: firstName,
-        role: "customs",
-        orgInfo: `${port} • ${department}`,
       },
     });
   };
@@ -375,11 +406,11 @@ export default function Signup2() {
             <TouchableOpacity
               style={[
                 styles.continueButton,
-                !agreedToTerms && styles.continueButtonDisabled,
+                (!agreedToTerms || isSubmitting) && styles.continueButtonDisabled,
               ]}
               onPress={handleRegister}
               activeOpacity={0.8}
-              disabled={!agreedToTerms}
+              disabled={!agreedToTerms || isSubmitting}
             >
               <LinearGradient
                 colors={[
@@ -388,9 +419,13 @@ export default function Signup2() {
                 ]}
                 style={StyleSheet.absoluteFill}
               />
-              <Text style={styles.continueButtonText}>
-                Register As Customs Officer
-              </Text>
+              {isSubmitting ? (
+                <ActivityIndicator color="#000000" />
+              ) : (
+                <Text style={styles.continueButtonText}>
+                  Register As Customs Officer
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

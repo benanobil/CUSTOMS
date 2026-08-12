@@ -10,7 +10,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   useFonts,
   PlusJakartaSans_500Medium,
@@ -62,7 +61,7 @@ export default function Onboarding() {
   const handleGetStarted = async () => {
     // Mark that onboarding has been completed
     try {
-      await AsyncStorage.setItem("hasLaunched", "true");
+      await authState.markOnboardingSeen();
     } catch (error) {
       console.log("Error saving first launch flag:", error);
     }
