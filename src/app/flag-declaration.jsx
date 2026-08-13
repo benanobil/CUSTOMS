@@ -9,6 +9,8 @@ import {
   TextInput,
   Modal,
   FlatList,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,6 +24,7 @@ import {
   PlusJakartaSans_700Bold,
 } from "@expo-google-fonts/plus-jakarta-sans";
 import * as DocumentPicker from "expo-document-picker";
+import { declarationService } from "../services/declarationService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -173,6 +176,8 @@ export default function FlagDeclaration() {
   const [additionalDetails, setAdditionalDetails] = useState("");
   const [assignAuditor, setAssignAuditor] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [flagResult, setFlagResult] = useState(null);
 
   // Mock uploaded files (for demo)
   const [files, setFiles] = useState([
@@ -235,10 +240,22 @@ export default function FlagDeclaration() {
     router.back();
   };
 
-  const handleSubmit = () => {
-    if (!flagReason) return;
-    // TODO: hook up to blockchain / API call
-    setShowSuccess(true);
+  const handleSubmit = async () => {
+    if (!flagReason || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const response = await declarationService.flagDeclaration({
+        declarationId: declaration.id,
+        reason: flagReason,
+        notes: notes.trim(),
+      });
+      setFlagResult(response);
+      setShowSuccess(true);
+    } catch (error) {
+      Alert.alert("Flagging failed", error.message || "Unable to flag this declaration.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSuccessContinue = () => {
@@ -248,7 +265,7 @@ export default function FlagDeclaration() {
     }, 100);
   };
 
-  const isSubmitDisabled = !flagReason;
+  const isSubmitDisabled = !flagReason || isSubmitting;
 
   return (
     <View style={styles.container}>
@@ -381,7 +398,11 @@ export default function FlagDeclaration() {
               activeOpacity={0.85}
               disabled={isSubmitDisabled}
             >
-              <Text style={styles.submitBtnText}>SUBMIT</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color="#000000" />
+              ) : (
+                <Text style={styles.submitBtnText}>SUBMIT</Text>
+              )}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -404,6 +425,11 @@ export default function FlagDeclaration() {
               {declaration.id} has been flagged for investigation.
               {assignAuditor && " An auditor will be assigned shortly."}
             </Text>
+            {!!flagResult?.flag?.transactionHash && (
+              <Text style={styles.successTransaction} numberOfLines={2}>
+                Transaction: {flagResult.flag.transactionHash}
+              </Text>
+            )}
             <TouchableOpacity
               style={styles.successContinueBtn}
               onPress={handleSuccessContinue}
@@ -756,6 +782,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
+  },
+  successTransaction: {
+    color: "#78828A",
+    fontFamily: "PlusJakartaSans_400Regular",
+    fontSize: 10,
+    lineHeight: 14,
+    textAlign: "center",
   },
   successContinueBtn: {
     width: "100%",

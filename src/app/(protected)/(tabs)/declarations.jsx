@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +22,7 @@ import {
   PlusJakartaSans_700Bold,
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { useRouter } from "expo-router";
+import { declarationService, mapDeclarationForList } from "../../../services/declarationService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -54,44 +58,6 @@ const WarningIcon = () => (
 // ══════════════════════════════════════════════════
 // 📊 MOCK DATA
 // ══════════════════════════════════════════════════
-
-const declarationsData = [
-  {
-    id: "TMA-2026-0042",
-    name: "Toyota Corolla 2022- 1 unit",
-    hsCode: "870323",
-    value: "$115,000",
-    duty: "$3,750",
-    status: "Paid",
-    declaredDate: "2026-08-08",
-  },
-  {
-    id: "TMA-2026-0042",
-    name: "Fresh Oranges- 500 cartons",
-    hsCode: "870324",
-    value: "$115,000",
-    duty: "$3,750",
-    status: "Pending",
-  },
-  {
-    id: "TMA-2026-0042",
-    name: "Lithium Batteries- 1000 units",
-    hsCode: "870503",
-    value: "$115,000",
-    duty: "$3,750",
-    status: "Released",
-    releasedDate: "2026-08-09",
-  },
-  {
-    id: "TMA-2026-0042",
-    name: "Lithium Batteries- 1000 units",
-    hsCode: "870323",
-    value: "$115,000",
-    duty: "$3,750",
-    status: "Flagged",
-    note: "Under Investigation- Contact Auditor",
-  },
-];
 
 // ══════════════════════════════════════════════════
 // 🧩 SUB-COMPONENTS
@@ -198,7 +164,25 @@ const DeclarationCard = ({ item, onPay, onOpen }) => {
 export default function Declarations() {
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [declarationsData, setDeclarationsData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const router = useRouter();
+
+  const loadDeclarations = useCallback(async ({ refreshing = false } = {}) => {
+    refreshing ? setIsRefreshing(true) : setIsLoading(true);
+    try {
+      const response = await declarationService.getAll({ limit: 100 });
+      setDeclarationsData((response.declarations || []).map(mapDeclarationForList));
+    } catch (error) {
+      Alert.alert("Declarations unavailable", error.message || "Unable to load declarations.");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { loadDeclarations(); }, [loadDeclarations]);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -366,8 +350,11 @@ const handleOpenDetails = (item) => {
           style={styles.list}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadDeclarations({ refreshing: true })} tintColor="#F5B81B" />}
         >
-          {filteredData.length === 0 ? (
+          {isLoading ? (
+            <ActivityIndicator color="#F5B81B" style={{ marginTop: 32 }} />
+          ) : filteredData.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>No declarations found</Text>
             </View>

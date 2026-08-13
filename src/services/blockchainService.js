@@ -21,5 +21,32 @@ export const blockchainService = {
     ),
   getDeclarationEvents: (declarationId) =>
     api.get(`/blockchain/events/declaration/${encodeURIComponent(declarationId)}`),
-};
+  getDeclarationEventHistory: async (declarationId) => {
+    try {
+      return await blockchainService.getDeclarationEvents(declarationId);
+    } catch (error) {
+      if (error.status !== 400) throw error;
 
+      const eventNames = ["GoodsDeclared", "DutyPaid", "GoodsReleased"];
+      const responses = await Promise.all(
+        eventNames.map((eventName) =>
+          blockchainService.getEvents(eventName, { limit: 100 })
+        )
+      );
+      const events = responses
+        .flatMap((response, index) =>
+          (response.events || []).map((event) => ({
+            ...event,
+            event: event.event || eventNames[index],
+          }))
+        )
+        .filter((event) => {
+          const args = event.args || event.details || {};
+          return String(args.declarationId || args[0] || "") === String(declarationId);
+        })
+        .sort((a, b) => Number(a.blockNumber || 0) - Number(b.blockNumber || 0));
+
+      return { success: true, declarationId, events, count: events.length };
+    }
+  },
+};

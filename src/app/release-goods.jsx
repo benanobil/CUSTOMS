@@ -8,6 +8,8 @@ import {
   ScrollView,
   TextInput,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +22,7 @@ import {
   PlusJakartaSans_600SemiBold,
   PlusJakartaSans_700Bold,
 } from "@expo-google-fonts/plus-jakarta-sans";
+import { declarationService } from "../services/declarationService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -127,6 +130,8 @@ export default function ReleaseGoods() {
   const [notes, setNotes] = useState("");
   const [confirmed, setConfirmed] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [releaseResult, setReleaseResult] = useState(null);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -157,10 +162,18 @@ export default function ReleaseGoods() {
     router.back();
   };
 
-  const handleConfirm = () => {
-    if (!confirmed) return;
-    // TODO: hook up to blockchain call / API
-    setShowSuccess(true);
+  const handleConfirm = async () => {
+    if (!confirmed || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const response = await declarationService.releaseGoods(declaration.id);
+      setReleaseResult(response);
+      setShowSuccess(true);
+    } catch (error) {
+      Alert.alert("Release failed", error.message || "Unable to release these goods.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSuccessContinue = () => {
@@ -285,14 +298,20 @@ export default function ReleaseGoods() {
               style={[
                 styles.actionBtn,
                 styles.confirmBtn,
-                !confirmed && styles.confirmBtnDisabled,
+                (!confirmed || isSubmitting) && styles.confirmBtnDisabled,
               ]}
               onPress={handleConfirm}
               activeOpacity={0.85}
-              disabled={!confirmed}
+              disabled={!confirmed || isSubmitting}
             >
-              <ExclamationIcon />
-              <Text style={styles.confirmBtnText}>CONFIRM</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color="#000000" />
+              ) : (
+                <>
+                  <ExclamationIcon />
+                  <Text style={styles.confirmBtnText}>CONFIRM</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -320,6 +339,11 @@ export default function ReleaseGoods() {
             <Text style={styles.successSubtitle}>
               Declaration {declaration.id} has been successfully released.
             </Text>
+            {!!releaseResult?.transactionHash && (
+              <Text style={styles.successTransaction} numberOfLines={2}>
+                Transaction: {releaseResult.transactionHash}
+              </Text>
+            )}
             <TouchableOpacity
               style={styles.successContinueBtn}
               onPress={handleSuccessContinue}
@@ -666,6 +690,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
+  },
+  successTransaction: {
+    color: "#78828A",
+    fontFamily: "PlusJakartaSans_400Regular",
+    fontSize: 10,
+    lineHeight: 14,
+    textAlign: "center",
   },
   successContinueBtn: {
     width: "100%",

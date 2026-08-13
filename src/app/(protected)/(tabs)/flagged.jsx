@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +22,7 @@ import {
   PlusJakartaSans_700Bold,
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { useRouter } from "expo-router";
+import { declarationService } from "../../../services/declarationService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -38,6 +42,31 @@ const WarningIcon = ({ color = "#EF4444" }) => (
 // ══════════════════════════════════════════════════
 // 📊 MOCK DATA
 // ══════════════════════════════════════════════════
+
+/* API response mapping is kept here so the card remains presentation-focused. */
+const mapFlaggedDeclaration = (declaration) => {
+  const declaredValue = Number(declaration.declaredValueUSD || 0);
+  const shortfall = declaredValue * 0.2;
+  const risk = shortfall > 5000 ? "High" : shortfall > 2000 ? "Medium" : "Low";
+  return {
+    id: declaration.declarationId,
+    risk,
+    status:
+      declaration.status === "RESOLVED"
+        ? "Resolved"
+        : declaration.status === "UNDER_INVESTIGATION"
+          ? "Under Investigation"
+          : "Flagged",
+    company: [declaration.importer?.fullName, declaration.productDescription].filter(Boolean).join(" - ") || declaration.productDescription || "Declaration",
+    shortfall: `$${shortfall.toLocaleString()}`,
+    declared: `$${declaredValue.toLocaleString()}`,
+    flaggedDate: declaration.flaggedAt?.slice(0, 10) || declaration.updatedAt?.slice(0, 10) || "",
+    officer: declaration.flaggedBy?.fullName || declaration.customsOfficer?.fullName || "Customs Officer",
+    reason: declaration.flagReason || "Flagged for investigation",
+    assignedTo: declaration.assignedAuditor?.fullName ? `${declaration.assignedAuditor.fullName} (Auditor)` : "Unassigned",
+    raw: declaration,
+  };
+};
 
 const FLAGGED_CASES = [
   {
@@ -151,10 +180,6 @@ const FlaggedCard = ({ item, onOpen }) => {
         <Text style={styles.cardMeta}>
           Declared: <Text style={styles.cardMetaBold}>{item.declared}</Text>
         </Text>
-        <Text style={styles.cardMetaSeparator}>•</Text>
-        <Text style={styles.cardMeta}>
-          Market: <Text style={styles.cardMetaBold}>{item.market}</Text>
-        </Text>
       </View>
 
       {/* Flagged date + officer */}
@@ -201,7 +226,33 @@ const FlaggedCard = ({ item, onOpen }) => {
 export default function Flagged() {
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [flaggedCases, setFlaggedCases] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const router = useRouter();
+
+  const loadFlaggedCases = useCallback(async ({ refreshing = false } = {}) => {
+    refreshing ? setIsRefreshing(true) : setIsLoading(true);
+    try {
+      const responses = await Promise.all([
+        declarationService.getAll({ status: "FLAGGED", limit: 100 }),
+        declarationService.getAll({ status: "UNDER_INVESTIGATION", limit: 100 }),
+        declarationService.getAll({ status: "RESOLVED", limit: 100 }),
+      ]);
+      const declarations = responses.flatMap((response) => response.declarations || []);
+      const unique = Array.from(
+        new Map(declarations.map((declaration) => [declaration.declarationId, declaration])).values()
+      );
+      setFlaggedCases(unique.map(mapFlaggedDeclaration));
+    } catch (error) {
+      Alert.alert("Flagged cases unavailable", error.message || "Unable to load flagged cases.");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { loadFlaggedCases(); }, [loadFlaggedCases]);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -220,22 +271,22 @@ export default function Flagged() {
 
   // ─── Dynamic counts based on actual data ────────
   const counts = {
-    All: FLAGGED_CASES.length,
-    High: FLAGGED_CASES.filter((c) => c.risk === "High").length,
-    Medium: FLAGGED_CASES.filter((c) => c.risk === "Medium").length,
-    Low: FLAGGED_CASES.filter((c) => c.risk === "Low").length,
-    Resolved: FLAGGED_CASES.filter((c) => c.status === "Resolved").length,
+    All: flaggedCases.length,
+    High: flaggedCases.filter((c) => c.risk === "High").length,
+    Medium: flaggedCases.filter((c) => c.risk === "Medium").length,
+    Low: flaggedCases.filter((c) => c.risk === "Low").length,
+    Resolved: flaggedCases.filter((c) => c.status === "Resolved").length,
   };
 
   // ─── Filter data based on selection ─────────────
   let filteredData;
   if (selectedFilter === "All") {
-    filteredData = FLAGGED_CASES;
+    filteredData = flaggedCases;
   } else if (selectedFilter === "Resolved") {
-    filteredData = FLAGGED_CASES.filter((c) => c.status === "Resolved");
+    filteredData = flaggedCases.filter((c) => c.status === "Resolved");
   } else {
     // High / Medium / Low
-    filteredData = FLAGGED_CASES.filter((c) => c.risk === selectedFilter);
+    filteredData = flaggedCases.filter((c) => c.risk === selectedFilter);
   }
 
   // ─── Search filter ──────────────────────────────
@@ -258,6 +309,10 @@ export default function Flagged() {
       flagReason: item.reason,
       assignedAuditor: item.assignedTo,
       investigationStatus: item.status,
+      hsCode: item.raw?.hsCode || "",
+      dutyCalculated: item.raw?.dutyCalculatedUSD ? `$${Number(item.raw.dutyCalculatedUSD).toLocaleString()}` : "$0",
+      dutyPaid: item.raw?.dutyPaidUSD ? `$${Number(item.raw.dutyPaidUSD).toLocaleString()}` : "$0",
+      port: item.raw?.port || "",
     },
   });
 };
@@ -334,8 +389,11 @@ export default function Flagged() {
           style={styles.list}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadFlaggedCases({ refreshing: true })} tintColor="#F5B81B" />}
         >
-          {filteredData.length === 0 ? (
+          {isLoading ? (
+            <ActivityIndicator color="#F5B81B" style={{ marginTop: 32 }} />
+          ) : filteredData.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>No flagged cases found</Text>
             </View>

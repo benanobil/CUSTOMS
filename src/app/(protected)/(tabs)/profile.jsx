@@ -27,6 +27,8 @@ import { AuthContext } from "../../../utils/authContext";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { profileService } from "../../../services/profileService";
+import { blockchainService } from "../../../services/blockchainService";
+import { reportService } from "../../../services/reportService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -176,6 +178,7 @@ export default function Profile() {
   const router = useRouter();
   const [profile, setProfile] = useState(user);
   const [stats, setStats] = useState({});
+  const [blockchain, setBlockchain] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -195,6 +198,26 @@ export default function Profile() {
       setProfile(response.user);
       setStats(response.stats || {});
       updateUser(response.user);
+      try {
+        const statsResponse = await profileService.getStats();
+        setStats(statsResponse.stats || response.stats || {});
+      } catch {
+        try {
+          const report = await reportService.getDashboard();
+          setStats(report.stats || response.stats || {});
+        } catch {}
+      }
+      if (response.user?.walletAddress) {
+        try {
+          const [contractInfo, roleInfo] = await Promise.all([
+            blockchainService.getContractInfo(),
+            blockchainService.getRoles(response.user.walletAddress),
+          ]);
+          setBlockchain({ contractInfo, roleInfo });
+        } catch {
+          setBlockchain(null);
+        }
+      }
     } catch (error) {
       Alert.alert("Profile unavailable", error.message || "Unable to load your profile.");
     } finally {
@@ -338,8 +361,19 @@ export default function Profile() {
     { label: "Declarations Processed", value: String(stats.totalProcessed ?? 0) },
     { label: "Goods Released", value: String(stats.released ?? 0) },
     { label: "Pending Release", value: String(stats.pendingRelease ?? 0) },
-    { label: "Cases Flagged", value: String(stats.flagged ?? 0) },
+    { label: "Cases Flagged", value: String(stats.flaggedByMe ?? stats.flagged ?? 0) },
     { label: "Revenue Collected", value: `$${Number(stats.revenueCollected || 0).toLocaleString()}` },
+  ];
+
+  const activeRoles = Object.entries(blockchain?.roleInfo?.roles || {})
+    .filter(([, enabled]) => enabled)
+    .map(([role]) => role.replace(/_ROLE$/, ""))
+    .join(", ") || "None";
+  const blockchainInfo = [
+    { label: "Network", value: blockchain?.contractInfo?.network?.name || "Unavailable" },
+    { label: "Block Number", value: String(blockchain?.contractInfo?.blockNumber ?? "Unavailable") },
+    { label: "On-chain Roles", value: activeRoles },
+    { label: "Contract", value: blockchain?.contractInfo?.contractAddress || "Unavailable" },
   ];
 
   return (
@@ -361,7 +395,7 @@ export default function Profile() {
       <SafeAreaView style={styles.safeArea}>
         {/* Top Header with icons */}
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7} onPress={() => router.push("/notifications")}>
             <NotificationIcon />
           </TouchableOpacity>
 
@@ -535,6 +569,18 @@ export default function Profile() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+
+          <SectionHeader title="Blockchain Access" />
+          <View style={styles.infoCard}>
+            {blockchainInfo.map((item, idx) => (
+              <InfoRow
+                key={item.label}
+                label={item.label}
+                value={item.value}
+                isLast={idx === blockchainInfo.length - 1}
+              />
+            ))}
           </View>
         </View>
       </Modal>

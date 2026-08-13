@@ -617,9 +617,11 @@ export default function FlaggedDeclarationDetails() {
 
   const handleViewEvidence = async (file) => {
     try {
-      const supported = await Linking.canOpenURL(file.url);
+      const downloadUrl = evidenceService.getDownloadUrl(file);
+      if (!downloadUrl) throw new Error("A download URL was not provided for this file");
+      const supported = await Linking.canOpenURL(downloadUrl);
       if (!supported) throw new Error("This file cannot be opened on this device");
-      await Linking.openURL(file.url);
+      await Linking.openURL(downloadUrl);
     } catch (error) {
       Alert.alert("Unable to open file", error.message);
     }
@@ -684,8 +686,12 @@ export default function FlaggedDeclarationDetails() {
         "image/jpeg",
         "image/png",
         "image/jpg",
+        "image/gif",
+        "image/webp",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "text/csv",
       ],
       multiple: false,
       copyToCacheDirectory: true,

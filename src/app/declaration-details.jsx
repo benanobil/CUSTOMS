@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,11 +6,16 @@ import {
   StatusBar,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
+  Alert,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path, Circle } from "react-native-svg";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { blockchainService } from "../services/blockchainService";
+import { declarationService } from "../services/declarationService";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -197,6 +202,10 @@ const QuickActionButton = ({ label, onPress }) => (
 export default function DeclarationDetails() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const [chain, setChain] = useState(null);
+  const [chainLoading, setChainLoading] = useState(true);
+  const [declarationApi, setDeclarationApi] = useState(null);
+  const [timeline, setTimeline] = useState([]);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -204,14 +213,6 @@ export default function DeclarationDetails() {
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
   });
-
-  if (!fontsLoaded) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
 
   // Get declaration data from params
   const declaration = {
@@ -231,6 +232,53 @@ export default function DeclarationDetails() {
     nftTokenId: params.nftTokenId || "1002",
     blockNumber: params.blockNumber || "4,567,890",
   };
+
+  const loadBlockchain = useCallback(async () => {
+    setChainLoading(true);
+    try {
+      const [onChain, events, contract, nft] = await Promise.all([
+        blockchainService.getDeclaration(declaration.id),
+        blockchainService.getDeclarationEventHistory(declaration.id),
+        blockchainService.getContractInfo(),
+        blockchainService.getNftByDeclaration(declaration.id).catch(() => null),
+      ]);
+      const transactionHash = params.transactionHash || events.events?.find((event) => event.event === "DutyPaid")?.transactionHash;
+      const transaction = transactionHash
+        ? await blockchainService.getTransaction(transactionHash).catch(() => null)
+        : null;
+      const receipt = transactionHash
+        ? await blockchainService.getTransactionReceipt(transactionHash).catch(() => null)
+        : null;
+      setChain({ onChain, events, contract, nft, transaction, receipt, transactionHash });
+    } catch (error) {
+      Alert.alert("Blockchain data unavailable", error.message || "Unable to load on-chain data.");
+    } finally {
+      setChainLoading(false);
+    }
+  }, [declaration.id, params.transactionHash]);
+
+  useEffect(() => { loadBlockchain(); }, [loadBlockchain]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      declarationService.getById(declaration.id),
+      declarationService.getTimeline(declaration.id),
+    ]).then(([details, timelineResponse]) => {
+      if (!active) return;
+      setDeclarationApi(details.declaration || null);
+      setTimeline(timelineResponse.timeline || []);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [declaration.id]);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   const isPending = declaration.status === "Pending";
   const isPaid = declaration.status === "Paid";
@@ -254,19 +302,32 @@ export default function DeclarationDetails() {
     });
   };
 
-  const handleViewReceipt = () => {
+  const handleViewReceipt = async () => {
+    try {
+      const response = await declarationService.getReceipt(declaration.id);
     router.push({
       pathname: "/payment-success",
       params: {
         id: declaration.id,
         product: declaration.description,
         totalDuty: declaration.dutyPaid,
+        nftTokenId: response.receipt?.tokenId || "",
+        receiptUrl: response.receipt?.openseaUrl || "",
       },
     });
+    } catch (error) {
+      Alert.alert("Receipt unavailable", error.message || "No receipt is available yet.");
+    }
   };
 
-  const handleDownload = (docName) => {
-    console.log("Download:", docName);
+  const handleDownload = async (docName) => {
+    if (docName !== "Receipt") return;
+    try {
+      const response = await declarationService.getReceipt(declaration.id);
+      if (response.receipt?.openseaUrl) Linking.openURL(response.receipt.openseaUrl);
+    } catch (error) {
+      Alert.alert("Receipt unavailable", error.message || "Unable to open the receipt.");
+    }
   };
 
   const handleShare = () => {
@@ -351,18 +412,31 @@ const handleVerifyPayment = () => {
 
           {/* Product Information */}
           <SectionCard Icon={ProductInfoIcon} title="Product Information">
-            <InfoRow label="HS Code" value={declaration.hsCode} />
-            <InfoRow label="Description" value={declaration.description} />
-            <InfoRow label="Declared Value" value={declaration.declaredValue} />
-            <InfoRow label="Duty Calculated" value={declaration.dutyCalculated} />
-            <InfoRow label="Duty Paid" value={declaration.dutyPaid} />
-            <InfoRow label="Status" value={declaration.paymentStatus} />
+            <InfoRow label="HS Code" value={declarationApi?.hsCode || declaration.hsCode} />
+            <InfoRow label="Description" value={declarationApi?.productDescription || declaration.description} />
+            <InfoRow label="Declared Value" value={declarationApi ? `$${Number(declarationApi.declaredValueUSD || 0).toLocaleString()}` : declaration.declaredValue} />
+            <InfoRow label="Duty Calculated" value={declarationApi ? `$${Number(declarationApi.dutyCalculatedUSD || 0).toLocaleString()}` : declaration.dutyCalculated} />
+            <InfoRow label="Duty Paid" value={declarationApi ? `$${Number(declarationApi.dutyPaidUSD || 0).toLocaleString()}` : declaration.dutyPaid} />
+            <InfoRow label="Status" value={declarationApi?.status || declaration.paymentStatus} />
             <InfoRow label="Port" value={declaration.port} />
             <InfoRow label="Customs Officer" value={declaration.customsOfficer} isLast />
           </SectionCard>
 
           {/* Timeline (only for Paid+ status) */}
-          {isPaid && (
+          {isPaid && timeline.length > 0 ? (
+            <SectionCard Icon={TimelineIcon} title="Timeline">
+              {timeline.map((event, index) => (
+                <TimelineItem
+                  key={`${event.event}-${event.timestamp}-${index}`}
+                  status={index === timeline.length - 1 ? "current" : "completed"}
+                  title={event.event}
+                  timestamp={event.timestamp ? new Date(event.timestamp).toLocaleString() : undefined}
+                  subtitle={[event.by, event.details].filter(Boolean).join("\n")}
+                  isLast={index === timeline.length - 1}
+                />
+              ))}
+            </SectionCard>
+          ) : isPaid && (
             <SectionCard Icon={TimelineIcon} title="Timeline">
               <TimelineItem
                 status="completed"
@@ -390,12 +464,17 @@ const handleVerifyPayment = () => {
           {/* Blockchain Verification (only for Paid+ status) */}
           {isPaid && (
             <SectionCard Icon={BlockchainIcon} title="Blockchain Verification">
-              <InfoRow label="Transaction Hash" value={declaration.transactionHash} />
-              <InfoRow label="NFT Token ID" value={declaration.nftTokenId} />
-              <InfoRow label="Block Number" value={declaration.blockNumber} isLast />
+              {chainLoading ? <ActivityIndicator color="#F5B81B" /> : (
+                <>
+                  <InfoRow label="Transaction Hash" value={chain?.transactionHash || declaration.transactionHash} />
+                  <InfoRow label="NFT Token ID" value={chain?.nft?.tokenId || declaration.nftTokenId} />
+                  <InfoRow label="Block Number" value={String(chain?.transaction?.blockNumber || declaration.blockNumber)} />
+                  <InfoRow label="Confirmations" value={String(chain?.transaction?.confirmations ?? "Unavailable")} isLast />
+                </>
+              )}
 
               {/* View on Etherscan */}
-              <TouchableOpacity style={styles.etherscanButton} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.etherscanButton} activeOpacity={0.85} onPress={() => chain?.transactionHash && Linking.openURL(`https://sepolia.etherscan.io/tx/${chain.transactionHash}`)}>
                 <Text style={styles.etherscanButtonText}>VIEW ON ETHERSCAN</Text>
               </TouchableOpacity>
 

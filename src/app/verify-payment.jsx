@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,15 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  ActivityIndicator,
+  Alert,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path } from "react-native-svg";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { blockchainService } from "../services/blockchainService";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -54,6 +58,9 @@ export default function VerifyPayment() {
   const params = useLocalSearchParams();
 
   const [showSuccess, setShowSuccess] = useState(false);
+  const [verification, setVerification] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -61,14 +68,6 @@ export default function VerifyPayment() {
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
   });
-
-  if (!fontsLoaded) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
 
   // Data from params or defaults
   const payment = {
@@ -81,15 +80,49 @@ export default function VerifyPayment() {
     nftTokenId: params.nftTokenId || "1002",
   };
 
+  const loadVerification = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [transaction, receipt, nft, onChain] = await Promise.all([
+        blockchainService.getTransaction(payment.transHash),
+        blockchainService.getTransactionReceipt(payment.transHash),
+        blockchainService.getNftByDeclaration(payment.declarationId).catch(() =>
+          payment.nftTokenId
+            ? blockchainService.getNftByTokenId(payment.nftTokenId).catch(() => null)
+            : null
+        ),
+        blockchainService.getDeclaration(payment.declarationId).catch(() => null),
+      ]);
+      const gas = await blockchainService.estimateGas({
+        functionName: "payDuty",
+        params: { declarationId: payment.declarationId },
+      }).catch(() => null);
+      setVerification({ transaction, receipt, nft, onChain, gas });
+    } catch (error) {
+      Alert.alert("Verification unavailable", error.message || "Unable to verify this transaction.");
+    } finally { setIsLoading(false); }
+  }, [payment.declarationId, payment.transHash]);
+
+  useEffect(() => { loadVerification(); }, [loadVerification]);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+
   // ─── Handlers ────────────────────────────────
   const handleViewEtherscan = () => {
-    console.log("View on Etherscan:", payment.transHash);
-    // TODO: Linking.openURL(`https://sepolia.etherscan.io/tx/${payment.transHash}`)
+    Linking.openURL(`https://sepolia.etherscan.io/tx/${payment.transHash}`);
   };
 
   const handleConfirmVerification = () => {
-    // TODO: hook up to blockchain / API
-    setShowSuccess(true);
+    if (isLoading || isConfirming || verification?.transaction?.status !== "success") return;
+    setIsConfirming(true);
+    try { setShowSuccess(true); }
+    finally { setIsConfirming(false); }
   };
 
   const handleSuccessDone = () => {
@@ -156,10 +189,12 @@ export default function VerifyPayment() {
             </Text>
 
             <View style={styles.checklistWrap}>
-              <ChecklistItem text="Transaction confirmed on blockchain" />
-              <ChecklistItem text="Payment matches calculated duty" />
-              <ChecklistItem text="NFT receipt minted and verified" />
-              <ChecklistItem text="Payment sent to state treasury wallet" />
+              {isLoading ? <ActivityIndicator color="#2563EB" /> : <>
+                <ChecklistItem text={`Transaction ${verification?.transaction?.status === "success" ? "confirmed" : "not confirmed"} on blockchain`} />
+                <ChecklistItem text={`Confirmations: ${verification?.transaction?.confirmations ?? 0}`} />
+                <ChecklistItem text={`NFT receipt ${verification?.nft ? "minted and verified" : "not found"}`} />
+                <ChecklistItem text={`Gas estimate: ${verification?.gas?.estimatedCostUSD ? `$${verification.gas.estimatedCostUSD}` : "Unavailable"}`} />
+              </>}
             </View>
           </View>
 
@@ -176,6 +211,7 @@ export default function VerifyPayment() {
           <TouchableOpacity
             style={styles.confirmBtn}
             onPress={handleConfirmVerification}
+            disabled={isLoading || isConfirming || verification?.transaction?.status !== "success"}
             activeOpacity={0.85}
           >
             <Text style={styles.confirmBtnText}>Confirm Verification</Text>

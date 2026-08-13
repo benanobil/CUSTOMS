@@ -7,3 +7,5 @@ export const reportService = {
   getDeclarationStats: () => api.get("/reports/declaration-stats"),
 };
 
+export const getStatusCount = (stats, status) =>
+  Number(stats?.byStatus?.find((item) => item.status === status)?.count || 0);

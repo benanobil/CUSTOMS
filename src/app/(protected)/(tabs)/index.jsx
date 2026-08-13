@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,9 @@ import {
   StatusBar,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Circle, G, ClipPath, Defs, Rect } from "react-native-svg";
@@ -18,6 +21,8 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { AuthContext } from "../../../utils/authContext";
 import { useRouter } from "expo-router";
+import { reportService } from "../../../services/reportService";
+import { notificationService } from "../../../services/notificationService";
 
 // ══════════════════════════════════════════════════
 // 🎨 SVG ICONS
@@ -260,6 +265,35 @@ const QuickAction = ({ Icon, label, onPress }) => (
 export default function Home() {
   const { user } = useContext(AuthContext);
   const router = useRouter();     // ✅ ADD THIS
+  const [dashboard, setDashboard] = useState({});
+  const [reportStats, setReportStats] = useState({});
+  const [activities, setActivities] = useState([]);
+  const [isLoadingReports, setIsLoadingReports] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  const loadReports = useCallback(async ({ refreshing = false } = {}) => {
+    refreshing ? setIsRefreshing(true) : setIsLoadingReports(true);
+    try {
+      const [dashboardResponse, activityResponse, statsResponse] = await Promise.all([
+        reportService.getDashboard(),
+        reportService.getActivity({ limit: 5 }),
+        reportService.getDeclarationStats(),
+      ]);
+      setDashboard(dashboardResponse.stats || {});
+      setActivities(activityResponse.activities || []);
+      setReportStats(statsResponse.stats || {});
+      const notificationCount = await notificationService.getUnreadCount().catch(() => null);
+      setUnreadNotifications(notificationCount?.unreadCount || 0);
+    } catch (error) {
+      Alert.alert("Reports unavailable", error.message || "Unable to load dashboard reports.");
+    } finally {
+      setIsLoadingReports(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { loadReports(); }, [loadReports]);
 
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -279,11 +313,13 @@ export default function Home() {
   const userName = user?.name || "Joel Ltd";
   const orgInfo = user?.orgInfo || "Customs Officer";
 
-  const declarations = [
-    { id: "TMA-2026-0042", name: "Toyota Corolla 2022- 1 unit", duty: "$1,750", date: "2026-08-08", status: "Paid" },
-    { id: "TMA-2026-0041", name: "Fresh Oranges- 500 cartons", duty: "$1,500", date: "2026-08-08", status: "Pending" },
-    { id: "TMA-2026-0040", name: "Lithium Batteries- 100 units", duty: "$1,900", date: "2026-08-08", status: "Released" },
-  ];
+  const declarations = activities.filter((activity) => activity.declarationId).map((activity) => ({
+    id: activity.declarationId,
+    name: activity.details || activity.action?.replace(/_/g, " ") || "Declaration activity",
+    duty: "Activity",
+    date: activity.createdAt?.slice(0, 10) || "",
+    status: activity.newValues?.status === "GOODS_RELEASED" ? "Released" : activity.action === "DECLARATION_FLAG" ? "Flagged" : "Paid",
+  }));
 
   // ✅ Open declaration details
   const openDeclarationDetails = (d) => {
@@ -315,8 +351,9 @@ export default function Home() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.notificationButton} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.notificationButton} activeOpacity={0.7} onPress={() => router.push("/notifications")}>
             <NotificationBell />
+            {unreadNotifications > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications > 99 ? "99+" : unreadNotifications}</Text></View>}
           </TouchableOpacity>
         </View>
 
@@ -324,6 +361,7 @@ export default function Home() {
           style={styles.content}
           contentContainerStyle={styles.contentInner}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadReports({ refreshing: true })} tintColor="#F5B81B" />}
         >
           {/* Status Cards Row */}
           <View style={styles.statusRowWrapper}>
@@ -332,9 +370,9 @@ export default function Home() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.statusRow}
             >
-              <StatusCard label="Pending Payment" value="2" Icon={PendingIcon} />
-              <StatusCard label="Paid" value="3" Icon={PaidIcon} />
-              <StatusCard label="Released" value="5" Icon={ReleasedIcon} />
+              <StatusCard label="Pending Release" value={String(dashboard.pendingRelease ?? 0)} Icon={PendingIcon} />
+              <StatusCard label="Processed" value={String(dashboard.totalProcessed ?? 0)} Icon={PaidIcon} />
+              <StatusCard label="Released" value={String(dashboard.released ?? 0)} Icon={ReleasedIcon} />
             </ScrollView>
           </View>
 
@@ -343,23 +381,23 @@ export default function Home() {
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>This Month</Text>
-              <Text style={styles.summaryValue}>$12,450</Text>
+              <Text style={styles.summaryValue}>${Number(dashboard.revenueCollected || 0).toLocaleString()}</Text>
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>This Year</Text>
-              <Text style={styles.summaryValue}>$187300</Text>
+              <Text style={styles.summaryLabel}>Average Duty Paid</Text>
+              <Text style={styles.summaryValue}>${Number(reportStats.averageDutyPaid || 0).toLocaleString()}</Text>
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Declarations</Text>
-              <Text style={styles.summaryValue}>12 times</Text>
+              <Text style={styles.summaryValue}>{reportStats.total || 0}</Text>
             </View>
           </View>
 
           {/* Recent Declarations — now tappable */}
           <SectionHeader Icon={ClockIcon} title="Recent Declarations" />
-          {declarations.map((d) => (
+          {isLoadingReports ? <ActivityIndicator color="#F5B81B" /> : declarations.map((d) => (
             <DeclarationItem
               key={d.id}
               {...d}
@@ -464,6 +502,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  notificationBadge:{position:"absolute",top:2,right:1,minWidth:18,height:18,borderRadius:9,backgroundColor:"#EF4444",alignItems:"center",justifyContent:"center",paddingHorizontal:4,borderWidth:2,borderColor:"#FFF"},
+  notificationBadgeText:{color:"#FFF",fontSize:9,fontWeight:"700"},
 
   
   // 📜 Content
