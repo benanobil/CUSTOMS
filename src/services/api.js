@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const API_BASE_URL = (
-  process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080/api"
+  process.env.EXPO_PUBLIC_API_URL || "https://trust-backend-2nt9.onrender.com/api"
 ).replace(/\/$/, "");
 
 export const AUTH_TOKEN_KEY = "trust_customs_auth_token";
@@ -92,4 +92,3 @@ export const api = {
     apiRequest(path, { ...options, method: "PATCH", body }),
   delete: (path, options) => apiRequest(path, { ...options, method: "DELETE" }),
 };
-
