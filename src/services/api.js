@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { fetch } from "expo/fetch";
 
 export const API_BASE_URL = (
   process.env.EXPO_PUBLIC_API_URL || "https://trust-backend-2nt9.onrender.com/api"

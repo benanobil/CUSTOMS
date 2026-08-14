@@ -165,7 +165,7 @@ const SectionHeader = ({ title }) => (
 const InfoRow = ({ label, value, isLast }) => (
   <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
     <Text style={styles.infoLabel}>{label}</Text>
-    <Text style={styles.infoValue}>{value}</Text>
+    <Text style={styles.infoValue} numberOfLines={1} ellipsizeMode="middle" selectable>{value}</Text>
   </View>
 );
 
@@ -747,14 +747,15 @@ const styles = StyleSheet.create({
     color: "#78828A",
     fontFamily: "PlusJakartaSans_500Medium",
     fontSize: 12,
-    flex: 1,
+    width: "38%",
   },
   infoValue: {
     color: "#171725",
     fontFamily: "PlusJakartaSans_600SemiBold",
     fontSize: 12,
     textAlign: "right",
-    flexShrink: 1,
+    flex: 1,
+    minWidth: 0,
     marginLeft: 8,
   },
 
