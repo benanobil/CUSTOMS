@@ -30,11 +30,11 @@ import { profileService } from "../../../services/profileService";
 import { blockchainService } from "../../../services/blockchainService";
 import { reportService } from "../../../services/reportService";
 
-// ══════════════════════════════════════════════════
-// 🎨 SVG ICONS
-// ══════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸŽ¨ SVG ICONS
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-// 🔔 Notification (bell)
+// ðŸ”” Notification (bell)
 const NotificationIcon = () => (
   <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
     <G clipPath="url(#clip_notif)">
@@ -51,7 +51,7 @@ const NotificationIcon = () => (
   </Svg>
 );
 
-// 🕐 History (clock with arrow)
+// ðŸ• History (clock with arrow)
 const HistoryIcon = () => (
   <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
     <G clipPath="url(#clip_hist)">
@@ -68,7 +68,7 @@ const HistoryIcon = () => (
   </Svg>
 );
 
-// ⋮ More Options (3 dots vertical)
+// â‹® More Options (3 dots vertical)
 const MoreOptionsIcon = () => (
   <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
     <G clipPath="url(#clip_more)">
@@ -85,7 +85,7 @@ const MoreOptionsIcon = () => (
   </Svg>
 );
 
-// 📷 Camera Icon (yellow badge)
+// ðŸ“· Camera Icon (yellow badge)
 const CameraIcon = () => (
   <Svg width="26" height="26" viewBox="0 0 26 26" fill="none">
     <Rect width="25.9508" height="25.8429" rx="12.9214" fill="#F5B81B" />
@@ -98,7 +98,7 @@ const CameraIcon = () => (
   </Svg>
 );
 
-// 🛡 Security Icon (yellow shield with lock)
+// ðŸ›¡ Security Icon (yellow shield with lock)
 const SecurityIcon = () => (
   <Svg width="40" height="40" viewBox="0 0 40 40" fill="none">
     <Path
@@ -108,7 +108,7 @@ const SecurityIcon = () => (
   </Svg>
 );
 
-// 🚪 Logout Icon (red arrow)
+// ðŸšª Logout Icon (red arrow)
 const LogoutIcon = () => (
   <Svg width="24" height="24" viewBox="0 0 42 42" fill="none">
     <G clipPath="url(#clip_logout)">
@@ -126,7 +126,7 @@ const LogoutIcon = () => (
   </Svg>
 );
 
-// ↩ Back arrow icon (small black)
+// â†© Back arrow icon (small black)
 const BackArrowIcon = () => (
   <Svg width="12" height="12" viewBox="0 0 12 12" fill="none">
     <G clipPath="url(#clip_back)">
@@ -149,9 +149,9 @@ const BackArrowIcon = () => (
   </Svg>
 );
 
-// ══════════════════════════════════════════════════
-// 🧩 SUB-COMPONENTS
-// ══════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸ§© SUB-COMPONENTS
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // Section header (yellow dot + title)
 const SectionHeader = ({ title }) => (
@@ -165,13 +165,17 @@ const SectionHeader = ({ title }) => (
 const InfoRow = ({ label, value, isLast }) => (
   <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
     <Text style={styles.infoLabel}>{label}</Text>
-    <Text style={styles.infoValue} numberOfLines={1} ellipsizeMode="middle" selectable>{value}</Text>
+    <Text style={styles.infoValue} numberOfLines={1} selectable>
+      {["Wallet Address", "Contract"].includes(label) && String(value).length > 18
+        ? `${String(value).slice(0, 15)}...`
+        : value}
+    </Text>
   </View>
 );
 
-// ══════════════════════════════════════════════════
-// 👤 MAIN PROFILE SCREEN
-// ══════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸ‘¤ MAIN PROFILE SCREEN
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export default function Profile() {
   const { user, updateUser, logOut } = useContext(AuthContext);
@@ -341,19 +345,19 @@ export default function Profile() {
   const userName = profile?.fullName || "Customs Officer";
   const userRole = [profile?.rankDesignation, profile?.portOfAssignment]
     .filter(Boolean)
-    .join(" • ") || "Customs Officer";
+    .join(" â€¢ ") || "Customs Officer";
 
   // Account info (customs officer)
   const accountInfo = [
-    { label: "Email", value: profile?.email || "—" },
-    { label: "Wallet Address", value: profile?.walletAddress || "—" },
-    { label: "Employee ID", value: profile?.employeeId || "—" },
-    { label: "Badge Number", value: profile?.badgeNumber || "—" },
-    { label: "Phone", value: profile?.phoneNumber || "—" },
-    { label: "Supervisor", value: profile?.supervisorEmail || "—" },
-    { label: "Port", value: profile?.portOfAssignment || "—" },
-    { label: "Department", value: profile?.department || "—" },
-    { label: "Rank", value: profile?.rankDesignation || "—" },
+    { label: "Email", value: profile?.email || "â€”" },
+    { label: "Wallet Address", value: profile?.walletAddress || "â€”" },
+    { label: "Employee ID", value: profile?.employeeId || "â€”" },
+    { label: "Badge Number", value: profile?.badgeNumber || "â€”" },
+    { label: "Phone", value: profile?.phoneNumber || "â€”" },
+    { label: "Supervisor", value: profile?.supervisorEmail || "â€”" },
+    { label: "Port", value: profile?.portOfAssignment || "â€”" },
+    { label: "Department", value: profile?.department || "â€”" },
+    { label: "Rank", value: profile?.rankDesignation || "â€”" },
   ];
 
   // Today's activity stats
@@ -380,7 +384,7 @@ export default function Profile() {
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
-      {/* 🎨 Yellow gradient background at top */}
+      {/* ðŸŽ¨ Yellow gradient background at top */}
       <LinearGradient
         colors={[
           "rgba(245, 184, 27, 0.4)",
@@ -507,7 +511,7 @@ export default function Profile() {
             <Text style={styles.versionText}>Version 1.0.0</Text>
             <Text style={styles.versionSubText}>Ethereum Sepolia Network</Text>
             <Text style={styles.versionSubText}>
-              ©2026 TRUST. All rights reserved.
+              Â©2026 TRUST. All rights reserved.
             </Text>
           </View>
 
@@ -588,9 +592,9 @@ export default function Profile() {
   );
 }
 
-// ══════════════════════════════════════════════════
-// 🎨 STYLES
-// ══════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸŽ¨ STYLES
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
@@ -602,7 +606,7 @@ const styles = StyleSheet.create({
   },
   safeArea: { flex: 1 },
 
-  // 🎨 Yellow gradient at top
+  // ðŸŽ¨ Yellow gradient at top
   topGradient: {
     position: "absolute",
     top: 0,
@@ -612,7 +616,7 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
 
-  // 🔝 Top bar (notification + history + more)
+  // ðŸ” Top bar (notification + history + more)
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -634,7 +638,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // 📜 Scroll content
+  // ðŸ“œ Scroll content
   content: { flex: 1 },
   contentInner: {
     paddingHorizontal: 20,
@@ -643,7 +647,7 @@ const styles = StyleSheet.create({
     gap: 20,
   },
 
-  // 👤 Profile Section
+  // ðŸ‘¤ Profile Section
   profileSection: {
     alignItems: "center",
     marginBottom: 16,
@@ -704,7 +708,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // 🏷 Section Header
+  // ðŸ· Section Header
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -725,7 +729,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // 📋 Info Card
+  // ðŸ“‹ Info Card
   infoCard: {
     borderRadius: 12,
     backgroundColor: "#FFFFFF",
@@ -759,7 +763,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  // 🛡 Security Card
+  // ðŸ›¡ Security Card
   securityCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -789,7 +793,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
 
-  // 📌 Version section
+  // ðŸ“Œ Version section
   versionSection: {
     alignItems: "center",
     marginTop: 16,
@@ -807,7 +811,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 
-  // 🚪 Logout Button
+  // ðŸšª Logout Button
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
