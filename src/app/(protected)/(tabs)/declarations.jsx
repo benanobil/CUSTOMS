@@ -278,14 +278,7 @@ const handleOpenDetails = (item) => {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>My Declarations</Text>
 
-          <TouchableOpacity
-            style={styles.requestButton}
-            activeOpacity={0.85}
-            onPress={() => router.push("/request-declaration")}
-          >
-            <RequestIcon />
-            <Text style={styles.requestButtonText}>Request</Text>
-          </TouchableOpacity>
+        
         </View>
 
         {/* Search Bar */}
